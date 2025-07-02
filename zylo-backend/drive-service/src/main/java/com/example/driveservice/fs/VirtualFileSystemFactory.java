@@ -3,15 +3,19 @@ package com.example.driveservice.fs;
 import com.example.driveservice.dao.mongo.DriveRepository;
 import com.example.driveservice.dao.redis.VfsCacheRepository;
 import com.example.driveservice.document.Directory;
+import com.example.driveservice.document.Node;
 import com.example.driveservice.exception.VfsDeserializationException;
 import com.example.driveservice.service.UploadService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.AllArgsConstructor;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.unit.DataSize;
 
 @Component
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class VirtualFileSystemFactory {
 
   private final DriveRepository driveRepo;
@@ -19,21 +23,35 @@ public class VirtualFileSystemFactory {
   private final UploadService uploadService;
   private final ObjectMapper mapper;
 
+  @Value("${zylo.plan.free.max-drive-size}")
+  private DataSize freeDriveMaxSize;
 
-  private VirtualFileSystem createNewVfs(Directory entryNode, String username,
+  @Value("${zylo.plan.plus.max-drive-size}")
+  private DataSize plusDriveMaxSize;
+
+  private VirtualFileSystem createNewVfs(Directory entryNode, List<Node> nodes, String username,
       String subscription) {
     long maxSize = 0;
     if (subscription.equalsIgnoreCase("free")) {
-      maxSize = 512 * 1048576; // 512MB
+      maxSize = freeDriveMaxSize.toBytes();
     } else if (subscription.equalsIgnoreCase("plus")) {
-      maxSize = 1024 * 1024 * 1024; // 1GB
+      maxSize = plusDriveMaxSize.toBytes();
     }
 
-    return new InMemoryFileSystem(entryNode, username, subscription, 0,
-        maxSize, driveRepo, cacheRepo, uploadService);
+    return InMemoryFileSystem.builder()
+        .nodes(nodes)
+        .root(entryNode)
+        .username(username)
+        .subscription(subscription)
+        .currentSize(0)
+        .maxSize(maxSize)
+        .driveRepo(driveRepo)
+        .cacheRepo(cacheRepo)
+        .uploadService(uploadService)
+        .build();
   }
 
-  private VirtualFileSystem getVfsFromCache(String username) throws VfsDeserializationException {
+  private VirtualFileSystem getCachedVfs(String username) throws VfsDeserializationException {
     String serializedVfs = cacheRepo.get(username);
 
     if (serializedVfs == null) {
@@ -48,15 +66,16 @@ public class VirtualFileSystemFactory {
     }
   }
 
-  public VirtualFileSystem create(Directory entry, String username, String subscription)
+  public VirtualFileSystem create(Directory entry, List<Node> nodes, String username,
+      String subscription)
       throws VfsDeserializationException {
-    VirtualFileSystem cachedVfs = getVfsFromCache(username);
+    VirtualFileSystem cachedVfs = getCachedVfs(username);
 
     if (cachedVfs != null) {
       return cachedVfs;
     }
 
-    return createNewVfs(entry, username, subscription);
+    return createNewVfs(entry, nodes, username, subscription);
   }
 
 }

@@ -8,8 +8,8 @@ import com.example.driveservice.dao.mongo.DriveRepository;
 import com.example.driveservice.document.Directory;
 import com.example.driveservice.document.File;
 import com.example.driveservice.document.Node;
-import com.example.driveservice.fs.InMemoryFileSystem;
 import com.example.driveservice.fs.VirtualFileSystem;
+import com.example.driveservice.fs.VirtualFileSystemFactory;
 import com.example.driveservice.fs.VirtualFileSystemSerializer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.ByteArrayInputStream;
@@ -22,11 +22,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
+@ActiveProfiles("dev")
 class InMemoryFileSystemTest {
 
   private VirtualFileSystem vfs;
+
+  @Autowired
+  private VirtualFileSystemFactory vfsFactory;
 
   @Autowired
   private DriveRepository repo;
@@ -35,6 +40,7 @@ class InMemoryFileSystemTest {
   private VirtualFileSystemSerializer serializer;
 
   private static final String FAKE_USER_ID = "abc123";
+  private static final String FAKE_PLAN = "free";
   private static final String ROOT_NODE_ID = FAKE_USER_ID + UUID.randomUUID();
   private static final String EMPTY_DIR_ID = FAKE_USER_ID + UUID.randomUUID();
 
@@ -117,8 +123,7 @@ class InMemoryFileSystemTest {
     nodes.add(imageFile);
     nodes.add(textFile);
 
-    this.vfs = new InMemoryFileSystem(nodes, repo);
-
+    this.vfs = vfsFactory.create(root, nodes, FAKE_USER_ID, FAKE_PLAN);
   }
 
   @Test

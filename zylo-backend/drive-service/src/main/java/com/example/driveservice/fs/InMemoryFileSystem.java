@@ -60,7 +60,7 @@ public class InMemoryFileSystem implements VirtualFileSystem {
   @Setter
   private UploadService uploadService;
 
-  // VFS 속성
+  // VFS 노드 속성
   @JsonIgnore
   private Directory root;
 
@@ -78,12 +78,6 @@ public class InMemoryFileSystem implements VirtualFileSystem {
     // Empty Constructor for deserialization using ObjectMapper
   }
 
-  //TODO Deprecate this constructor and make users use Factory class
-  public InMemoryFileSystem(List<Node> nodes, DriveRepository repo) {
-    buildTree(nodes);
-    this.driveRepo = repo;
-  }
-
   protected InMemoryFileSystem(Directory root, String username, String subscription,
       long currentSize, long maxSize,
       DriveRepository driveRepo, VfsCacheRepository cacheRepo, UploadService uploadService) {
@@ -98,35 +92,6 @@ public class InMemoryFileSystem implements VirtualFileSystem {
     this.uploadService = uploadService;
   }
 
-  /**
-   * Node 리스트를 N-ary 다진 트리로 변환
-   *
-   * @param nodes Mongo DB 조회 결과로서 반환된 Node들
-   */
-  private void buildTree(List<Node> nodes) {
-    Map<String, Directory> dirMap = new HashMap<>();
-    Map<String, Node> nodesMap = new HashMap<>();
-
-    for (Node node : nodes) {
-      nodesMap.put(node.getNodeId(), node);
-      if (node instanceof Directory dir) {
-        dirMap.put(dir.getNodeId(), dir);
-      }
-    }
-
-    for (Node node : nodes) {
-      if (node.getParentId() == null) {
-        root = (Directory) node;
-        pwd = (Directory) node;
-        continue;
-      }
-
-      Directory parent = dirMap.get(node.getParentId());
-      if (parent != null) {
-        parent.getChildren().add(node);
-      }
-    }
-  }
 
   private Directory findDirRecursively(String nodeId, Node currentNode) {
     if (!(currentNode instanceof Directory dir)) { // currentNode가 File인 경우
@@ -180,6 +145,21 @@ public class InMemoryFileSystem implements VirtualFileSystem {
     return false;
   }
 
+  private void collectDirtyNodes(Directory entry, List<Node> dirtyQueue) {
+    if (entry.isDir()) {
+      dirtyQueue.add(entry);
+    }
+    List<Node> children = entry.getChildren();
+
+    for (Node child : children) {
+      if (child instanceof Directory newEntry) {
+        collectDirtyNodes(newEntry, dirtyQueue);
+      } else if (child.isDirty()) {
+        dirtyQueue.add(child);
+      }
+    }
+  }
+
   /**
    * 재귀 함수. <br> root에서 시작하여 트리의 모든 노드를 순회. 대상 노드의 dirty flag를 기준으로 MongoDB에의 저장을 결정. 대상 노드가 저장되면
    * dirty flag는 false로 바뀜(clean).
@@ -198,6 +178,10 @@ public class InMemoryFileSystem implements VirtualFileSystem {
         flushRecursively(child);
       }
     }
+  }
+
+  public static Builder builder() {
+    return new Builder();
   }
 
   @Override
@@ -314,6 +298,9 @@ public class InMemoryFileSystem implements VirtualFileSystem {
    */
   @Override
   public void flush() {
+    // TODO: 1. Upload to S3 & Sync mongo
+    // TODO: 2. Delete from S3 & Mongo
+    // TODO: 3. Invalidate cache and create new one
     log.info("flush 호출이 감지되었습니다. 변경 노드를 동기화합니다.");
 
     log.info("Delete Queue에 따라 노드 삭제 중...");
@@ -328,5 +315,100 @@ public class InMemoryFileSystem implements VirtualFileSystem {
     log.info("변경된 노드 동기화 중...");
 
     deleteQueue.clear();
+  }
+
+  public static class Builder {
+
+    private String username;
+    private String subscription;
+    private long currentSize;
+    private long maxSize;
+    private DriveRepository driveRepo;
+    private VfsCacheRepository cacheRepo;
+    private UploadService uploadService;
+    private Directory root;
+    private List<Node> nodes;
+
+    private Builder() {
+      //Builder pattern has an empty constructor
+    }
+
+    /**
+     * Node 리스트를 N-ary 다진 트리로 변환
+     */
+    private void buildTree() {
+      Map<String, Directory> dirMap = new HashMap<>();
+      Map<String, Node> nodesMap = new HashMap<>();
+
+      for (Node node : nodes) {
+        nodesMap.put(node.getNodeId(), node);
+        if (node instanceof Directory dir) {
+          dirMap.put(dir.getNodeId(), dir);
+        }
+      }
+
+      for (Node node : nodes) {
+        if (node.getParentId() == null) {
+          root = (Directory) node;
+          continue;
+        }
+
+        Directory parent = dirMap.get(node.getParentId());
+        if (parent != null) {
+          parent.getChildren().add(node);
+        }
+      }
+    }
+
+    public Builder username(String username) {
+      this.username = username;
+      return this;
+    }
+
+    public Builder subscription(String subscription) {
+      this.subscription = subscription;
+      return this;
+    }
+
+    public Builder currentSize(long currentSize) {
+      this.currentSize = currentSize;
+      return this;
+    }
+
+    public Builder maxSize(long maxSize) {
+      this.maxSize = maxSize;
+      return this;
+    }
+
+    public Builder driveRepo(DriveRepository driveRepo) {
+      this.driveRepo = driveRepo;
+      return this;
+    }
+
+    public Builder cacheRepo(VfsCacheRepository cacheRepo) {
+      this.cacheRepo = cacheRepo;
+      return this;
+    }
+
+    public Builder uploadService(UploadService uploadService) {
+      this.uploadService = uploadService;
+      return this;
+    }
+
+    public Builder root(Directory root) {
+      this.root = root;
+      return this;
+    }
+
+    public Builder nodes(List<Node> nodes) {
+      this.nodes = nodes;
+      return this;
+    }
+
+    public InMemoryFileSystem build() {
+      buildTree();
+      return new InMemoryFileSystem(root, username, subscription, currentSize, maxSize, driveRepo,
+          cacheRepo, uploadService);
+    }
   }
 }

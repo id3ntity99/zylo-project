@@ -37,6 +37,13 @@ server:
   servlet:
     context-path: /
 
+zylo:
+  plan:
+    free:
+      max-drive-size: 512MB
+    plus:
+      max-drive-size: 1GB
+
 aws:
   s3:
     name: lotte2-zylo-bucket
@@ -60,7 +67,7 @@ spring:
 
   data:
     mongodb:
-      uri: localhost:27017/drive
+      uri: mongodb://localhost:27017/drive
 
     redis:
       host: localhost
