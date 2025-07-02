@@ -252,13 +252,14 @@ public class InMemoryFileSystem implements VirtualFileSystem {
     updatePathRecursively(movingNode, newParent);
 
     // 목적지 디렉터리에 삽입 전, duplication 검증
-    List<Node> destDirChildren = newParent.getChildren();
     boolean isDuplicated = findDuplication(newParent, movingNode);
 
     if (isDuplicated) { // 중복되는 이름의 파일이 이미 newParent에 존재하는 경우
       String message = String.format("%s에 같은 이름의 파일이 존재합니다.", newParent.getFilename());
       throw new IllegalArgumentException(message);
     }
+
+    movingNode.markDirty();
 
     // 목적지 디렉터리에 삽입
     newParent.getChildren().add(movingNode);
